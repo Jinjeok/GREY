@@ -8,4 +8,7 @@ RUN npm install
 
 COPY . .
 
+RUN npm run deploy
+
+
 CMD ["npm", "start"]

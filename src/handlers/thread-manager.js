@@ -12,14 +12,9 @@ export class ThreadManager {
   // but mostly used handlers directly in the example code, or maybe it implies the manager does the "Parallel Create" logic?
   // I will implement the parallel creation here to clean up the command file.
 
-  async createIssueAndPage({ title, description, priority, assignee }) {
-    // Parallel execution
-    const [issue, page] = await Promise.all([
-      this.github.createIssue(title, description, [], assignee),
-      this.notion.createPage(title, description, [], priority, '준비')
-    ]);
-    return { issue, page };
-  }
+  // createIssueAndPage logic removed as commands are now split.
+  // This class can effectively be deprecated or used for other shared logic.
+
 
   async closeIssueAndPage({ issueNumber, pageId }) {
     await Promise.all([

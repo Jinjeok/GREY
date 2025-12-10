@@ -13,7 +13,7 @@ export class NotionHandler {
       const response = await this.client.pages.create({
         parent: { database_id: this.databaseId },
         properties: {
-          '제목': {
+          '이름': {
             title: [
               {
                 text: {
@@ -22,26 +22,29 @@ export class NotionHandler {
               }
             ]
           },
-          '설명': {
-            rich_text: [
-              {
-                text: {
-                  content: description.substring(0, 2000)
-                }
-              }
-            ]
-          },
-          '우선순위': {
-            select: {
-              name: priority === 'high' ? '높음' : priority === 'low' ? '낮음' : '중간'
-            }
-          },
-          '상태': {
-            select: {
-              name: status
+          '작업 상태': {
+            status: {
+              name: status // Assuming '준비' or similar is valid. status property uses 'status' not 'select' usually for Notion Status type, or 'select' for Select type. Debug said 'status'.
+              // actually Notion API for Status property allows setting by name in 'status' field: { status: { name: "Done" } }
             }
           }
-        }
+          // '우선순위': Skipped as property name unknown
+        },
+        children: [
+          {
+            object: 'block',
+            type: 'paragraph',
+            paragraph: {
+              rich_text: [
+                {
+                  text: {
+                    content: description.substring(0, 2000)
+                  }
+                }
+              ]
+            }
+          }
+        ]
       });
       return response;
     } catch (error) {

@@ -1,48 +1,52 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { GitHubHandler } from '../handlers/github-handler.js';
+import { NotionHandler } from '../handlers/notion-handler.js';
 import {
   getThreadIssue,
-  saveThreadIssue,
-  updateThreadIssueStatus
+  saveThreadIssue
 } from '../database/queries.js';
 
-const githubHandler = new GitHubHandler();
+const notionHandler = new NotionHandler();
 
 export const data = new SlashCommandBuilder()
-  .setName('이슈')
-  .setDescription('GitHub Issue를 관리합니다')
+  .setName('페이지')
+  .setDescription('Notion 페이지를 관리합니다')
   .addSubcommand(subcommand =>
     subcommand
       .setName('생성')
-      .setDescription('현재 스레드에 GitHub Issue를 생성합니다')
+      .setDescription('현재 스레드에 Notion 페이지를 생성합니다')
       .addStringOption(option =>
         option
           .setName('제목')
-          .setDescription('이슈 제목 (최대 256자)')
+          .setDescription('페이지 제목 (최대 256자)')
           .setRequired(true)
           .setMaxLength(256)
       )
       .addStringOption(option =>
         option
           .setName('설명')
-          .setDescription('이슈 설명 (최대 2000자)')
+          .setDescription('페이지 설명 (최대 2000자)')
           .setMaxLength(2000)
       )
       .addStringOption(option =>
         option
-          .setName('담당자')
-          .setDescription('GitHub 사용자명')
+          .setName('우선순위')
+          .setDescription('우선순위 선택')
+          .addChoices(
+            { name: '높음', value: 'high' },
+            { name: '중간', value: 'medium' },
+            { name: '낮음', value: 'low' }
+          )
       )
   )
   .addSubcommand(subcommand =>
     subcommand
       .setName('종료')
-      .setDescription('현재 스레드의 Issue를 종료합니다')
+      .setDescription('현재 스레드의 페이지 상태를 완료로 변경합니다')
   )
   .addSubcommand(subcommand =>
     subcommand
       .setName('상태')
-      .setDescription('현재 스레드의 Issue 상태를 조회합니다')
+      .setDescription('현재 스레드의 페이지 상태를 조회합니다')
   );
 
 export async function execute(interaction) {
@@ -69,70 +73,79 @@ async function handleCreate(interaction) {
   }
   
   const existing = await getThreadIssue(interaction.channel.id);
-  // Allow if existing is closed? Or strictly one per thread?
-  // Assuming one active issue per thread.
-  if (existing && existing.issueNumber && existing.status === 'connected') {
+  if (existing && existing.pageId && existing.status === 'connected') {
     return interaction.reply({
-      content: `❌ 이미 Issue #${existing.issueNumber}이 연동되어 있습니다.\n` +
-               `종료하려면: /이슈 종료`,
+      content: `❌ 이미 연동된 페이지가 있습니다.\n` +
+               `종료하려면: /페이지 종료`,
       ephemeral: true
     });
   }
   
   const title = interaction.options.getString('제목');
   const description = interaction.options.getString('설명') || '';
-  const assignee = interaction.options.getString('담당자');
+  const priority = interaction.options.getString('우선순위') || 'medium';
   
   await interaction.deferReply();
   
   try {
-    const issue = await githubHandler.createIssue(title, description, [], assignee);
-    
-    // We need to merge with existing if page exists, or create new
-    // If existing exists (e.g. from page command), we update it.
+    const page = await notionHandler.createPage(title, description, [], priority, '시작 전');
     
     let dbData = {
         threadId: interaction.channel.id,
         channelId: interaction.channel.parentId,
         guildId: interaction.guildId,
-        issueNumber: issue.number,
+        pageId: page.id,
         status: 'connected',
-        title, // Update title/desc to match issue? Or keep original?
+        title, // Update title if new?
         description,
-        createdBy: interaction.user.id,
-        // metadata merge handled potentially by saveThreadIssue or manual merge here
+        priority,
+        createdBy: interaction.user.id
     };
 
     if (existing) {
-        dbData = { ...dbData, metadata: { ...existing.metadata, issueUrl: issue.html_url } };
+        // Merge with existing
+       dbData = { 
+           ...dbData, 
+           issueNumber: existing.issueNumber, // Preserve GitHub link if exists
+           metadata: { 
+               ...existing.metadata, 
+               pageUrl: `https://notion.so/${page.id.replace(/-/g, '')}` 
+            } 
+        };
     } else {
-        dbData.metadata = { issueUrl: issue.html_url, threadUrl: interaction.channel.url };
+        dbData.metadata = { 
+            pageUrl: `https://notion.so/${page.id.replace(/-/g, '')}`,
+            threadUrl: interaction.channel.url
+        };
     }
-    
+
     await saveThreadIssue(dbData);
     
-    // Try update thread name
-    try {
-      const newName = `[#${issue.number}] ${title}`.substring(0, 100);
-      await interaction.channel.setName(newName);
-    } catch (e) {
-      console.warn('스레드 이름 변경 실패:', e.message);
+    // Update thread name if it's new? Or respect GitHub one?
+    // Let's not touch thread name if GitHub issue exists as that usually has ID.
+    if (!existing || !existing.issueNumber) {
+        try {
+            const newName = `[Page] ${title}`.substring(0, 100);
+            await interaction.channel.setName(newName);
+        } catch (e) {
+            console.warn('스레드 이름 변경 실패:', e.message);
+        }
     }
     
     const embed = new EmbedBuilder()
       .setColor(0x28a745)
-      .setTitle('✅ GitHub Issue 생성 완료!')
-      .setDescription(`**[#${issue.number}] ${title}**`)
+      .setTitle('✅ Notion 페이지 생성 완료!')
+      .setDescription(`**${title}**`)
       .addFields(
         {
-          name: '🔗 GitHub',
-          value: `[#${issue.number}](${issue.html_url})`,
+          name: '📄 Notion',
+          value: `[페이지](https://notion.so/${page.id.replace(/-/g, '')})`,
           inline: true
         },
         {
-            name: '상태',
-            value: issue.state,
-            inline: true
+          name: '🔴 우선순위',
+          value: priority === 'high' ? '높음' : priority === 'low' ? '낮음' : '중간',
+          inline: true
         }
       )
       .setFooter({
@@ -144,9 +157,9 @@ async function handleCreate(interaction) {
     await interaction.followUp({ embeds: [embed] });
     
   } catch (error) {
-    console.error('Issue 생성 오류:', error);
+    console.error('Page 생성 오류:', error);
     await interaction.followUp({
-      content: `❌ Issue 생성 실패: ${error.message}`,
+      content: `❌ Page 생성 실패: ${error.message}`,
       ephemeral: true
     });
   }
@@ -161,39 +174,29 @@ async function handleClose(interaction) {
   }
   
   const threadData = await getThreadIssue(interaction.channel.id);
-  if (!threadData || !threadData.issueNumber) {
+  if (!threadData || !threadData.pageId) {
     return interaction.reply({
-      content: '❌ 연동된 Issue가 없습니다.\n' +
-               `생성하려면: /이슈 생성`,
+      content: '❌ 연동된 페이지가 없습니다.\n' +
+               `생성하려면: /페이지 생성`,
       ephemeral: true
     });
   }
   
-  // If we close issue, do we close the whole thread? 
-  // Maybe only if page is also invalid? 
-  // For now let's just close the GitHub issue.
-    
   await interaction.deferReply();
   
   try {
-    await githubHandler.closeIssue(threadData.issueNumber);
-    
-    // Update DB status only if this was the main thing? 
-    // If we have page, maybe we shouldn't close the whole thread status?
-    // But specific requirement said "/이슈 생성 is github only".
-    // "Close" typically closes the issue.
-    
-    // Let's NOT archive the thread automatically if there might be a page.
-    // Or just simple logic: Close issue.
+    await notionHandler.updatePageProperty(threadData.pageId, {
+      '작업 상태': { status: { name: '완료' } }
+    });
     
     const embed = new EmbedBuilder()
       .setColor(0xdc3545)
-      .setTitle('✅ Issue 종료 완료!')
-      .setDescription(`**[#${threadData.issueNumber}] ${threadData.title}**`)
+      .setTitle('✅ Page 종료(완료) 처리!')
+      .setDescription(`**${threadData.title}**`)
       .addFields(
         {
-          name: '🔗 GitHub',
-          value: `[#${threadData.issueNumber}](${threadData.metadata?.issueUrl || ''}) Closed`,
+          name: '📄 Notion',
+          value: `Status: 완료`,
           inline: true
         }
       )
@@ -206,9 +209,9 @@ async function handleClose(interaction) {
     await interaction.followUp({ embeds: [embed] });
     
   } catch (error) {
-    console.error('Issue 종료 오류:', error);
+    console.error('Page 종료 오류:', error);
     await interaction.followUp({
-      content: `❌ Issue 종료 실패: ${error.message}`,
+      content: `❌ Page 종료 실패: ${error.message}`,
       ephemeral: true
     });
   }
@@ -223,9 +226,9 @@ async function handleStatus(interaction) {
   }
   
   const threadData = await getThreadIssue(interaction.channel.id);
-  if (!threadData || !threadData.issueNumber) {
+  if (!threadData || !threadData.pageId) {
     return interaction.reply({
-      content: '❌ 연동된 Issue가 없습니다.',
+      content: '❌ 연동된 페이지가 없습니다.',
       ephemeral: true
     });
   }
@@ -233,18 +236,17 @@ async function handleStatus(interaction) {
   await interaction.deferReply();
   
   try {
-    const issue = await githubHandler.getIssue(threadData.issueNumber);
+    const page = await notionHandler.getPage(threadData.pageId);
     
     const embed = new EmbedBuilder()
       .setColor(0x0366d6)
-      .setTitle(`📊 GitHub Issue 상태`)
+      .setTitle(`📊 Notion Page 상태`)
       .addFields(
         {
-          name: '🔗 GitHub Issue',
-          value: `**#${issue.number}** ${issue.title}\n` +
-                 `상태: ${issue.state === 'open' ? '🟢 Open' : '🔴 Closed'}\n` +
-                 `라벨: ${issue.labels.map(l => l.name).join(', ') || 'None'}\n` +
-                 `[링크](${issue.html_url})`,
+          name: '📄 Notion Page',
+          value: `**${page.properties['이름']?.title[0]?.text?.content || 'N/A'}**\n` +
+                 `상태: ${page.properties['작업 상태']?.status?.name || 'N/A'}\n` +
+                 `[링크](https://notion.so/${page.id.replace(/-/g, '')})`,
           inline: false
         }
       )
@@ -257,7 +259,7 @@ async function handleStatus(interaction) {
     await interaction.followUp({ embeds: [embed] });
     
   } catch (error) {
-    console.error('Issue 상태 조회 오류:', error);
+    console.error('Page 상태 조회 오류:', error);
     await interaction.followUp({
       content: `❌ 상태 조회 실패: ${error.message}`,
       ephemeral: true

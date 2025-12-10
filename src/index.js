@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { Client, Collection, GatewayIntentBits, Events } from 'discord.js';
 import { connectDatabase } from './database/connect.js';
 import * as issueCommand from './commands/issue.js';
+import * as pageCommand from './commands/page.js';
 
 const client = new Client({
   intents: [
@@ -12,6 +13,7 @@ const client = new Client({
 
 client.commands = new Collection();
 client.commands.set(issueCommand.data.name, issueCommand);
+client.commands.set(pageCommand.data.name, pageCommand);
 
 client.once(Events.ClientReady, async () => {
   console.log(`Ready! Logged in as ${client.user.tag}`);

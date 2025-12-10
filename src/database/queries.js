@@ -5,10 +5,10 @@ export async function getThreadIssue(threadId) {
 }
 
 export async function saveThreadIssue(data) {
-  // Upsert to handle potential race conditions or re-runs, though typically creation is one-off
+  // Upsert to handle potential race conditions or re-runs
   return await ThreadIssue.findOneAndUpdate(
     { threadId: data.threadId },
-    data,
+    { $set: data },
     { upsert: true, new: true }
   );
 }
