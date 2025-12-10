@@ -38,6 +38,34 @@ cp .env.example .env
 | `NOTION_DATABASE_ID` | ID of the Notion Database |
 | `MONGODB_URI` | MongoDB Connection String (e.g., `mongodb://localhost:27017/roundtable`) |
 
+### 2. Token Permissions & Scopes
+
+Following permissions are required for each token:
+
+#### Discord Bot Token (`DISCORD_TOKEN`)
+-   **Scopes**: `bot`, `applications.commands`
+-   **Bot Permissions**: 
+    -   `Send Messages`
+    -   `Send Messages in Threads`
+    -   `Create Public Threads`
+    -   `Manage Threads` (Required for renaming and archiving threads)
+    -   `View Channels`
+
+#### GitHub Token (`GITHUB_TOKEN`)
+-   **Type**: Personal Access Token (Classic)
+-   **Scopes**: 
+    -   `repo` (Full control of private repositories) - *Required for reading/writing Issues in private repos.*
+    -   (Or `public_repo` if using only public repositories)
+
+#### Notion Token (`NOTION_TOKEN`)
+-   **Type**: Internal Integration Token
+-   **Capabilities**:
+    -   `Read content`
+    -   `Update content`
+    -   `Insert content`
+-   **Important**: You must manually **connect** the target Database to the integration via the Notion UI (click `...` on the Database page -> `Connections` -> Add your integration).
+
+
 ### 2. Running Locally
 
 Install dependencies:
@@ -85,3 +113,4 @@ Inside a Discord Thread:
 
 ## License
 ISC
+
