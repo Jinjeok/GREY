@@ -1,0 +1,24 @@
+services:
+  bot:
+    build: .
+    restart: always
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017/roundtable
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  mongo:
+    image: mongo:6.0
+    restart: always
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  mongo-data:
