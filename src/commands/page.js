@@ -17,14 +17,14 @@ export const data = new SlashCommandBuilder()
       .addStringOption(option =>
         option
           .setName('제목')
-          .setDescription('페이지 제목 (최대 256자)')
-          .setRequired(true)
+          .setDescription('페이지 제목 (최대 256자) - 생략 시 스레드 제목 사용')
+          .setRequired(false)
           .setMaxLength(256)
       )
       .addStringOption(option =>
         option
           .setName('설명')
-          .setDescription('페이지 설명 (최대 2000자)')
+          .setDescription('페이지 설명 (최대 2000자) - 생략 시 스레드 내용 사용')
           .setMaxLength(2000)
       )
       .addStringOption(option =>
@@ -81,11 +81,38 @@ async function handleCreate(interaction) {
     });
   }
   
-  const title = interaction.options.getString('제목');
-  const description = interaction.options.getString('설명') || '';
-  const priority = interaction.options.getString('우선순위') || 'medium';
-  
   await interaction.deferReply();
+
+  let title = interaction.options.getString('제목');
+  let description = interaction.options.getString('설명');
+  const priority = interaction.options.getString('우선순위') || 'medium';
+
+  // Fallback to thread info if missing
+  if (!title || !description) {
+    if (!title) title = interaction.channel.name;
+    
+    if (!description) {
+      try {
+        const starterMsg = await interaction.channel.fetchStarterMessage().catch(() => null);
+        if (starterMsg && starterMsg.content) {
+          description = starterMsg.content;
+        } else {
+             // Fallback: fetch recent messages
+             console.log('Fetching starter message failed, trying fallback...');
+             const messages = await interaction.channel.messages.fetch({ limit: 10 });
+             const firstMsg = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp).first();
+             if (firstMsg && firstMsg.content) {
+                 description = firstMsg.content;
+             } else {
+                 description = 'No description provided.';
+             }
+        }
+      } catch (e) {
+        console.warn('Description fetch failed:', e);
+        description = 'No description provided.';
+      }
+    }
+  }
   
   try {
     const page = await notionHandler.createPage(title, description, [], priority, '시작 전');
@@ -104,7 +131,7 @@ async function handleCreate(interaction) {
 
     if (existing) {
         // Merge with existing
-       dbData = { 
+        dbData = { 
            ...dbData, 
            issueNumber: existing.issueNumber, // Preserve GitHub link if exists
            metadata: { 
@@ -130,6 +157,23 @@ async function handleCreate(interaction) {
         } catch (e) {
             console.warn('스레드 이름 변경 실패:', e.message);
         }
+    }
+
+    // Try to add '페이지 생성됨' tag
+    try {
+        const parent = interaction.channel.parent;
+        if (parent && parent.availableTags) {
+            const tag = parent.availableTags.find(t => t.name === '페이지 생성됨');
+            if (tag) {
+                // Combine with existing tags
+                const currentTags = interaction.channel.appliedTags || [];
+                if (!currentTags.includes(tag.id)) {
+                    await interaction.channel.setAppliedTags([...currentTags, tag.id]);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('태그 추가 실패:', e.message);
     }
     
     const embed = new EmbedBuilder()

@@ -18,14 +18,14 @@ export const data = new SlashCommandBuilder()
       .addStringOption(option =>
         option
           .setName('제목')
-          .setDescription('이슈 제목 (최대 256자)')
-          .setRequired(true)
+          .setDescription('이슈 제목 (최대 256자) - 생략 시 스레드 제목 사용')
+          .setRequired(false)
           .setMaxLength(256)
       )
       .addStringOption(option =>
         option
           .setName('설명')
-          .setDescription('이슈 설명 (최대 2000자)')
+          .setDescription('이슈 설명 (최대 2000자) - 생략 시 스레드 내용 사용')
           .setMaxLength(2000)
       )
       .addStringOption(option =>
@@ -79,11 +79,47 @@ async function handleCreate(interaction) {
     });
   }
   
-  const title = interaction.options.getString('제목');
-  const description = interaction.options.getString('설명') || '';
-  const assignee = interaction.options.getString('담당자');
-  
   await interaction.deferReply();
+
+  let title = interaction.options.getString('제목');
+  let description = interaction.options.getString('설명');
+  const assignee = interaction.options.getString('담당자');
+
+  // If title/description not provided, fetch from thread
+  if (!title || !description) {
+    if (!title) title = interaction.channel.name;
+    
+    // Clean up title if it already has issue tag (though unlikely if new issue)
+    // But maybe user is running command on a renamed thread?
+    // Regex to remove existing tags like [#123] or [Page] if needed, but 
+    // user said "keep adding [#1]", so we probably take the raw name
+    // and let the new tag be prepended.
+    
+    if (!description) {
+      try {
+        const starterMsg = await interaction.channel.fetchStarterMessage().catch(() => null);
+        if (starterMsg && starterMsg.content) {
+          description = starterMsg.content;
+        } else {
+             // Fallback: fetch recent messages
+             console.log('Fetching starter message failed, trying fallback...');
+             const messages = await interaction.channel.messages.fetch({ limit: 10 });
+             const firstMsg = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp).first();
+             if (firstMsg && firstMsg.content) {
+                 description = firstMsg.content;
+             } else {
+                 description = 'No description provided.';
+             }
+        }
+      } catch (e) {
+        console.warn('Description fetch failed:', e);
+        description = 'No description provided.';
+      }
+    }
+  }
+  
+  // Truncate if necessary (Discord limits vs GitHub limits)
+  // GitHub title max ?? (usually ample), description ample.
   
   try {
     const issue = await githubHandler.createIssue(title, description, [], assignee);
@@ -113,10 +149,33 @@ async function handleCreate(interaction) {
     
     // Try update thread name
     try {
+      // Remove any existing tags to avoid stacking? 
+      // User said "keep adding [#1]". 
+      // If thread is named "Bug Report", it becomes "[#1] Bug Report".
+      // If it's already "[#1] Bug Report", we probably shouldn't add it again if it matched?
+      // But this is a *new* issue.
+      
       const newName = `[#${issue.number}] ${title}`.substring(0, 100);
       await interaction.channel.setName(newName);
     } catch (e) {
       console.warn('스레드 이름 변경 실패:', e.message);
+    }
+
+    // Try to add '이슈 생성됨' tag
+    try {
+        const parent = interaction.channel.parent;
+        if (parent && parent.availableTags) {
+            const tag = parent.availableTags.find(t => t.name === '이슈 생성됨');
+            if (tag) {
+                // Combine with existing tags
+                const currentTags = interaction.channel.appliedTags || [];
+                if (!currentTags.includes(tag.id)) {
+                    await interaction.channel.setAppliedTags([...currentTags, tag.id]);
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('태그 추가 실패:', e.message);
     }
     
     const embed = new EmbedBuilder()
