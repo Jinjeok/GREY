@@ -4,7 +4,12 @@ import { connectDatabase } from './database/connect.js';
 import * as issueCommand from './commands/issue.js';
 import * as pageCommand from './commands/page.js';
 import { GitHubHandler } from './handlers/github-handler.js';
-import { getThreadIssue } from './database/queries.js';
+import { 
+  getThreadIssue, 
+  saveMessageCommentMap,
+  getMessageCommentMap,
+  deleteMessageCommentMap
+} from './database/queries.js';
 
 const client = new Client({
   intents: [
@@ -73,12 +78,45 @@ client.on(Events.MessageCreate, async message => {
     const commentBody = `**${message.author.username}**: ${message.content}`;
     
     // GitHub 이슈에 댓글 추가
-    await githubHandler.addComment(threadData.issueNumber, commentBody);
+    const comment = await githubHandler.addComment(threadData.issueNumber, commentBody);
+
+    // Discord 메시지와 GitHub 댓글 매핑 저장
+    await saveMessageCommentMap({
+      discordMessageId: message.id,
+      discordThreadId: message.channel.id,
+      discordUserId: message.author.id,
+      discordUsername: message.author.username,
+      issueNumber: threadData.issueNumber,
+      commentId: comment.id,
+    });
     
     console.log(`✅ 댓글 동기화됨: #${threadData.issueNumber} - ${message.author.username}`);
   } catch (error) {
     console.error('메시지 동기화 오류:', error.message);
     // 에러가 발생해도 Discord 메시지는 정상 전송되도록 함
+  }
+});
+
+// Discord 메시지 삭제 → GitHub 댓글 삭제 동기화
+client.on(Events.MessageDelete, async message => {
+  try {
+    // partial 메시지일 수도 있어서 ID만 사용
+    const discordMessageId = message.id;
+    if (!discordMessageId) return;
+
+    // 매핑 조회
+    const map = await getMessageCommentMap(discordMessageId);
+    if (!map) return; // 매핑 없으면 무시
+
+    // GitHub 댓글 삭제
+    await githubHandler.deleteComment(map.commentId);
+
+    // 매핑도 정리
+    await deleteMessageCommentMap(discordMessageId);
+
+    console.log(`🗑️ Discord 메시지 삭제 → GitHub 댓글 삭제 완료 (issue #${map.issueNumber}, comment ${map.commentId})`);
+  } catch (error) {
+    console.error('메시지 삭제 동기화 오류:', error.message);
   }
 });
 
