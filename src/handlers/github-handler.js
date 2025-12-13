@@ -54,4 +54,19 @@ export class GitHubHandler {
       throw new Error('Failed to get GitHub Issue');
     }
   }
+
+  async addComment(issueNumber, body) {
+    try {
+      const response = await this.octokit.rest.issues.createComment({
+        owner: this.owner,
+        repo: this.repo,
+        issue_number: issueNumber,
+        body
+      });
+      return response.data;
+    } catch (error) {
+      console.error('GitHub Add Comment Error:', error);
+      throw new Error('Failed to add comment to GitHub Issue');
+    }
+  }
 }
