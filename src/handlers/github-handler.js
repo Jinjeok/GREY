@@ -41,6 +41,21 @@ export class GitHubHandler {
     }
   }
 
+  async reopenIssue(issueNumber) {
+    try {
+      const response = await this.octokit.rest.issues.update({
+        owner: this.owner,
+        repo: this.repo,
+        issue_number: issueNumber,
+        state: 'open'
+      });
+      return response.data;
+    } catch (error) {
+      console.error('GitHub Reopen Issue Error:', error);
+      throw new Error('Failed to reopen GitHub Issue');
+    }
+  }
+
   async getIssue(issueNumber) {
     try {
       const response = await this.octokit.rest.issues.get({
