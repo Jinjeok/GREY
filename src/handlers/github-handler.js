@@ -69,4 +69,18 @@ export class GitHubHandler {
       throw new Error('Failed to add comment to GitHub Issue');
     }
   }
+
+  async deleteComment(commentId) {
+    try {
+      await this.octokit.rest.issues.deleteComment({
+        owner: this.owner,
+        repo: this.repo,
+        comment_id: commentId
+      });
+      return true;
+    } catch (error) {
+      console.error('GitHub Delete Comment Error:', error);
+      throw new Error('Failed to delete comment from GitHub Issue');
+    }
+  }
 }
