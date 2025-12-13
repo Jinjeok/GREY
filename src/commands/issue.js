@@ -41,6 +41,11 @@ export const data = new SlashCommandBuilder()
   )
   .addSubcommand(subcommand =>
     subcommand
+      .setName('재오픈')
+      .setDescription('현재 스레드의 종료된 Issue를 다시 엽니다')
+  )
+  .addSubcommand(subcommand =>
+    subcommand
       .setName('상태')
       .setDescription('현재 스레드의 Issue 상태를 조회합니다')
   );
@@ -53,6 +58,8 @@ export async function execute(interaction) {
       return await handleCreate(interaction);
     case '종료':
       return await handleClose(interaction);
+    case '재오픈':
+      return await handleReopen(interaction);
     case '상태':
       return await handleStatus(interaction);
     default:
@@ -268,6 +275,72 @@ async function handleClose(interaction) {
     console.error('Issue 종료 오류:', error);
     await interaction.followUp({
       content: `❌ Issue 종료 실패: ${error.message}`,
+      ephemeral: true
+    });
+  }
+}
+
+async function handleReopen(interaction) {
+  if (!interaction.channel.isThread()) {
+    return interaction.reply({
+      content: '❌ 이 명령어는 스레드 내에서만 사용할 수 있습니다.',
+      ephemeral: true
+    });
+  }
+  
+  const threadData = await getThreadIssue(interaction.channel.id);
+  if (!threadData || !threadData.issueNumber) {
+    return interaction.reply({
+      content: '❌ 연동된 Issue가 없습니다.\n' +
+               `생성하려면: /이슈 생성`,
+      ephemeral: true
+    });
+  }
+  
+  await interaction.deferReply();
+  
+  try {
+    const issue = await githubHandler.getIssue(threadData.issueNumber);
+    
+    // 이미 open되어 있으면 알려주기
+    if (issue.state === 'open') {
+      return await interaction.followUp({
+        content: `⚠️ Issue #${threadData.issueNumber}은(는) 이미 열려있습니다.`,
+        ephemeral: true
+      });
+    }
+    
+    // GitHub에서 Issue 재오픈
+    await githubHandler.reopenIssue(threadData.issueNumber);
+    
+    const embed = new EmbedBuilder()
+      .setColor(0x0366d6)
+      .setTitle('✅ Issue 재오픈 완료!')
+      .setDescription(`**[#${threadData.issueNumber}] ${threadData.title}**`)
+      .addFields(
+        {
+          name: '🔗 GitHub',
+          value: `[#${threadData.issueNumber}](${threadData.metadata?.issueUrl || ''}) Reopened`,
+          inline: true
+        },
+        {
+          name: '상태',
+          value: '🟢 Open',
+          inline: true
+        }
+      )
+      .setFooter({
+        text: `재오픈자: ${interaction.user.username}`,
+        iconURL: interaction.user.avatarURL()
+      })
+      .setTimestamp();
+    
+    await interaction.followUp({ embeds: [embed] });
+    
+  } catch (error) {
+    console.error('Issue 재오픈 오류:', error);
+    await interaction.followUp({
+      content: `❌ Issue 재오픈 실패: ${error.message}`,
       ephemeral: true
     });
   }
