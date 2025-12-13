@@ -58,4 +58,42 @@ const threadIssueSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+// Discord 메시지와 GitHub 댓글의 매핑
+const messageCommentMapSchema = new mongoose.Schema({
+  // Discord 메시지 정보
+  discordMessageId: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
+  },
+  discordThreadId: {
+    type: String,
+    required: true,
+    index: true
+  },
+  discordUserId: String,
+  discordUsername: String,
+  
+  // GitHub 댓글 정보
+  issueNumber: {
+    type: Number,
+    required: true,
+    index: true
+  },
+  commentId: {
+    type: Number,
+    required: true,
+    index: true
+  },
+  
+  // 타임스탬프
+  createdAt: {
+    type: Date,
+    default: Date.now,
+    index: true
+  }
+}, { timestamps: true });
+
 export const ThreadIssue = mongoose.model('ThreadIssue', threadIssueSchema);
+export const MessageCommentMap = mongoose.model('MessageCommentMap', messageCommentMapSchema);
